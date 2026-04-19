@@ -30,6 +30,7 @@ class MplCanvas(FigureCanvas):
 class VisualizationTab(QWidget):
     def __init__(self):
         super().__init__()
+        self.chart_mode = "severity"  # severity or trending
         self._build_ui()
         self.load_data()
 
@@ -42,12 +43,24 @@ class VisualizationTab(QWidget):
         title = QLabel("Insights Visualization")
         title.setStyleSheet("font-size: 18px; font-weight: bold; color: #cdd6f4;")
         
+        # Chart type toggle buttons
+        self.severity_btn = QPushButton("Severity Distribution")
+        self.severity_btn.setFixedWidth(150)
+        self.severity_btn.clicked.connect(self.show_severity_chart)
+        self.severity_btn.setStyleSheet("background-color: #45475a;")
+        
+        self.trending_btn = QPushButton("Insights Trending")
+        self.trending_btn.setFixedWidth(150)
+        self.trending_btn.clicked.connect(self.show_trending_chart)
+        
         self.refresh_btn = QPushButton("Refresh Data")
         self.refresh_btn.setFixedWidth(120)
         self.refresh_btn.clicked.connect(self.load_data)
         
         header_layout.addWidget(title)
         header_layout.addStretch()
+        header_layout.addWidget(self.severity_btn)
+        header_layout.addWidget(self.trending_btn)
         header_layout.addWidget(self.refresh_btn)
 
         self.layout.addLayout(header_layout)
@@ -62,12 +75,33 @@ class VisualizationTab(QWidget):
         # Ctrl+R: Refresh visualization data
         QShortcut(QKeySequence.Refresh, self).activated.connect(self.load_data)
 
+    def show_severity_chart(self):
+        """Switch to severity distribution chart"""
+        self.chart_mode = "severity"
+        self.severity_btn.setStyleSheet("background-color: #45475a;")
+        self.trending_btn.setStyleSheet("")
+        self.load_data()
+
+    def show_trending_chart(self):
+        """Switch to insights trending chart"""
+        self.chart_mode = "trending"
+        self.severity_btn.setStyleSheet("")
+        self.trending_btn.setStyleSheet("background-color: #45475a;")
+        self.load_data()
+
     def load_data(self):
         try:
             flagged = fetch_flagged_assets()
         except:
             flagged = []
-            
+        
+        if self.chart_mode == "severity":
+            self.load_severity_chart(flagged)
+        else:
+            self.load_trending_chart(flagged)
+
+    def load_severity_chart(self, flagged):
+        """Load and display severity distribution chart"""
         severity_counts = defaultdict(int)
 
         for _, insights_str in flagged:
@@ -81,9 +115,24 @@ class VisualizationTab(QWidget):
                 severity = parts[0].strip() if len(parts) > 1 else "UNKNOWN"
                 severity_counts[severity] += 1
                 
-        self.update_chart(severity_counts)
+        self.update_severity_chart(severity_counts)
 
-    def update_chart(self, severity_counts):
+    def load_trending_chart(self, flagged):
+        """Load and display insights trending chart (top 10 most frequent insights)"""
+        insight_counts = defaultdict(int)
+
+        for _, insights_str in flagged:
+            insights = insights_str.split(" | ")
+            for insight in insights:
+                insight = insight.strip()
+                if not insight:
+                    continue
+                insight_counts[insight] += 1
+        
+        self.update_trending_chart(insight_counts)
+
+    def update_severity_chart(self, severity_counts):
+        """Update the severity distribution bar chart"""
         self.canvas.axes.clear()
         
         if not severity_counts:
@@ -138,4 +187,68 @@ class VisualizationTab(QWidget):
                                   f'{int(height)}',
                                   ha='center', va='bottom', color='#cdd6f4', fontsize=11, fontweight='bold')
 
+        self.canvas.draw()
+
+    def update_trending_chart(self, insight_counts):
+        """Update the insights trending chart (top 10 most frequent insights)"""
+        self.canvas.axes.clear()
+        
+        if not insight_counts:
+            # Display highly visible empty state
+            self.canvas.axes.text(0.5, 0.5, 'No Insights Available', 
+                                  horizontalalignment='center', 
+                                  verticalalignment='center',
+                                  color='#bac2de', fontsize=14)
+            self.canvas.axes.set_xticks([])
+            self.canvas.axes.set_yticks([])
+            self.canvas.draw()
+            return
+        
+        # Sort by count and get top 10
+        sorted_insights = sorted(insight_counts.items(), key=lambda x: x[1], reverse=True)
+        top_insights = sorted_insights[:10]
+        
+        # Handle "Other" bucket if there are more than 10
+        if len(sorted_insights) > 10:
+            other_count = sum(count for _, count in sorted_insights[10:])
+            top_insights.append(("Other", other_count))
+        
+        labels = [label for label, _ in top_insights]
+        counts = [count for _, count in top_insights]
+        
+        # Color by severity (extract from insight label)
+        color_map = {
+            "CRITICAL": "#f38ba8",
+            "WARNING": "#f9e2af",
+            "INFO": "#89b4fa",
+            "SUGGESTION": "#a6e3a1",
+        }
+        
+        colors = []
+        for label in labels:
+            if "CRITICAL" in label:
+                colors.append(color_map["CRITICAL"])
+            elif "WARNING" in label:
+                colors.append(color_map["WARNING"])
+            elif "SUGGESTION" in label:
+                colors.append(color_map["SUGGESTION"])
+            else:
+                colors.append(color_map["INFO"])
+        
+        # Create horizontal bar chart
+        y_positions = range(len(labels))
+        bars = self.canvas.axes.barh(y_positions, counts, color=colors)
+        
+        self.canvas.axes.set_yticks(y_positions)
+        self.canvas.axes.set_yticklabels(labels, fontsize=9)
+        self.canvas.axes.set_xlabel('Occurrence Count', color='#cdd6f4')
+        self.canvas.axes.set_title('Top Insights by Frequency', color='#cdd6f4', pad=20, fontsize=14)
+        
+        # Add values at the end of bars
+        for i, (bar, count) in enumerate(zip(bars, counts)):
+            width = bar.get_width()
+            self.canvas.axes.text(width + 0.1, bar.get_y() + bar.get_height()/2.,
+                                  f'{int(count)}',
+                                  ha='left', va='center', color='#cdd6f4', fontsize=10, fontweight='bold')
+        
         self.canvas.draw()
