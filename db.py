@@ -324,3 +324,21 @@ def search_assets_advanced(search_query=None, asset_type=None, min_vram=None, us
                 filtered_results.append(row)
     
     return filtered_results
+
+
+def fetch_all_assets():
+    """
+    Fetch all assets from the database for folder view.
+    
+    Returns:
+        List of asset tuples: (path, type, size_bytes, width, height, channels, vram_mb, insights, is_favorite)
+    """
+    query = """
+    SELECT path, type, size_bytes, width, height, channels, vram_estimate_mb, insights, is_favorite
+    FROM assets
+    ORDER BY path ASC
+    """
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(query)
+        return cursor.fetchall()
