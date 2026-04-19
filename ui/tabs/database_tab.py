@@ -1,4 +1,4 @@
-# Advanced DB Explorer + Folder Aggregation View (Integrated)
+# Advanced DB Explorer + Folder Aggregation View (Integrated) with Thumbnails
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
@@ -7,11 +7,12 @@ from PyQt5.QtWidgets import (
     QTreeWidget, QTreeWidgetItem, QMenu, QApplication, QFileDialog, QMessageBox,
     QCheckBox
 )
-from PyQt5.QtCore import Qt, QUrl, QTimer
-from PyQt5.QtGui import QColor, QDesktopServices, QKeySequence, QClipboard
+from PyQt5.QtCore import Qt, QUrl, QTimer, QSize
+from PyQt5.QtGui import QColor, QDesktopServices, QKeySequence, QClipboard, QPixmap
 from PyQt5.QtWidgets import QShortcut
 
 from db import filter_assets, search_assets_advanced
+from utils import generate_thumbnail
 import os
 
 
@@ -23,6 +24,7 @@ class DatabaseTab(QWidget):
         self.search_debounce_timer.setSingleShot(True)
         self.search_debounce_timer.timeout.connect(self.load_data)
         self.recent_searches = []
+        self.thumbnail_cache = {}  # Cache for generated thumbnails
         self._build_ui()
         self.load_data()
 
@@ -116,11 +118,13 @@ class DatabaseTab(QWidget):
 
         # Table
         self.table = QTableWidget()
-        self.table.setColumnCount(9)
+        self.table.setColumnCount(10)
         self.table.setHorizontalHeaderLabels([
-            "★", "Path", "Type", "Size", "Width", "Height", "Channels", "VRAM (MB)", "Insights"
+            "★", "Thumbnail", "Path", "Type", "Size", "Width", "Height", "Channels", "VRAM (MB)", "Insights"
         ])
         self.table.setColumnWidth(0, 30)  # Star column width
+        self.table.setColumnWidth(1, 90)  # Thumbnail column width
+        self.table.setRowHeight(0, 80)  # Make rows taller for thumbnails
         self.table.setSortingEnabled(True)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setSelectionMode(QTableWidget.MultiSelection)
@@ -213,12 +217,18 @@ class DatabaseTab(QWidget):
             star_item.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(i, 0, star_item)
 
-            # Columns 1-8: Asset data (shifted by 1)
+            # Column 1: Thumbnail
+            path = row[0]
+            file_type = row[1] if len(row) > 1 else "other"
+            self.table.setItem(i, 1, self._create_thumbnail_item(path, file_type))
+            self.table.setRowHeight(i, 80)  # Set height for thumbnail display
+
+            # Columns 2-9: Asset data (shifted by 2 for star + thumbnail)
             for j, value in enumerate(row[:8]):  # Only iterate through first 8 values (exclude is_favorite)
-                col_index = j + 1  # Shift column index by 1 for the star
+                col_index = j + 2  # Shift column index by 2 for the star and thumbnail
                 item = QTableWidgetItem(str(value))
 
-                # VRAM column (now at index 7 instead of 6)
+                # VRAM column (now at index 8 instead of 6)
                 if j == 6:
                     try:
                         vram = float(value)
@@ -233,7 +243,7 @@ class DatabaseTab(QWidget):
                     except Exception as e:
                         print(f"Exception : {e}")
 
-                # Insights column (now at index 8 instead of 7)
+                # Insights column (now at index 9 instead of 7)
                 if j == 7:
                     val_str = str(value)
                     
@@ -258,9 +268,37 @@ class DatabaseTab(QWidget):
 
                 self.table.setItem(i, col_index, item)
 
+    def _create_thumbnail_item(self, path, file_type):
+        """Create a thumbnail item for the given file path"""
+        item = QTableWidgetItem()
+        
+        # Only show thumbnails for image files
+        if file_type == "image" and path in self.thumbnail_cache:
+            pixmap = self.thumbnail_cache[path]
+            if pixmap:
+                item.setData(Qt.DecorationRole, pixmap)
+        elif file_type == "image":
+            # Generate thumbnail if not cached
+            if os.path.exists(path):
+                thumb = generate_thumbnail(path, size=(80, 80))
+                if thumb:
+                    # Convert PIL image to QPixmap
+                    import io
+                    from PIL import ImageQt
+                    pixmap = ImageQt.toqpixmap(thumb)
+                    self.thumbnail_cache[path] = pixmap
+                    item.setData(Qt.DecorationRole, pixmap)
+        
+        # Show placeholder for non-image files
+        if file_type == "other":
+            item.setText("📄")
+            item.setTextAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+        
+        return item
+
     def on_item_double_clicked(self, item):
         row = item.row()
-        path_item = self.table.item(row, 1)  # Path is now at column 1
+        path_item = self.table.item(row, 2)  # Path is now at column 2 (after star and thumbnail)
         if path_item:
             file_path = path_item.text()
             if os.path.exists(file_path):
@@ -286,7 +324,7 @@ class DatabaseTab(QWidget):
             action = menu.exec_(self.table.viewport().mapToGlobal(pos))
             
             if action:
-                path_item = self.table.item(row, 1)  # Path is at column 1
+                path_item = self.table.item(row, 2)  # Path is at column 2
                 if path_item:
                     file_path = path_item.text()
                     if action == open_action:
@@ -311,42 +349,66 @@ class DatabaseTab(QWidget):
         self.tree.setVisible(True)
 
     def populate_tree(self, rows):
+        """Build proper hierarchical tree from database paths"""
         self.tree.clear()
-
-        root = {}
-
+        
+        # Build folder hierarchy
+        folder_tree = {}
+        
         for row in rows:
             path = row[0]
-            vram = float(row[6]) if row[6] else 0
-
-            parts = path.split(os.sep)
-            current = root
-
-            for part in parts:
+            file_type = row[1] if len(row) > 1 else "other"
+            vram = float(row[6]) if len(row) > 6 and row[6] else 0
+            
+            # Split path into parts
+            parts = path.replace("\\", "/").split("/")
+            
+            # Navigate/create folder structure
+            current = folder_tree
+            for i, part in enumerate(parts[:-1]):  # All parts except filename
                 if part not in current:
-                    current[part] = {"__vram__": 0, "__children__": {}}
-                current[part]["__vram__"] += vram
-                current = current[part]["__children__"]
-
-        for key in root:
-            item = self._build_tree_item(key, root[key])
+                    current[part] = {"type": "folder", "vram": 0, "children": {}}
+                current[part]["vram"] += vram
+                current = current[part]["children"]
+            
+            # Add file as leaf node
+            if parts:
+                filename = parts[-1]
+                current[filename] = {"type": "file", "vram": vram, "file_type": file_type}
+        
+        # Build tree items
+        for name, data in sorted(folder_tree.items()):
+            item = self._build_tree_item(name, data)
             self.tree.addTopLevelItem(item)
-
+    
     def _build_tree_item(self, name, data):
-        vram = data["__vram__"]
-        item = QTreeWidgetItem([name, f"{vram:.2f}"])
-
+        """Recursively build tree items from folder hierarchy"""
+        is_folder = data.get("type") == "folder"
+        vram = data.get("vram", 0)
+        
+        # Format display text
+        if is_folder:
+            display_text = f"📁 {name}"
+        else:
+            display_text = f"📄 {name}"
+        
+        item = QTreeWidgetItem([display_text, f"{vram:.2f}"])
+        
+        # Color code by VRAM
         if vram > 1000:
             item.setBackground(1, QColor("#f38ba8"))
             item.setForeground(1, QColor("#11111b"))
         elif vram > 500:
             item.setBackground(1, QColor("#f9e2af"))
             item.setForeground(1, QColor("#11111b"))
-
-        for child_name, child_data in data["__children__"].items():
-            child_item = self._build_tree_item(child_name, child_data)
-            item.addChild(child_item)
-
+        
+        # Add children (subfolders and files)
+        if is_folder:
+            children = data.get("children", {})
+            for child_name, child_data in sorted(children.items()):
+                child_item = self._build_tree_item(child_name, child_data)
+                item.addChild(child_item)
+        
         return item
 
     # ========================= Keyboard Shortcuts =========================
@@ -355,7 +417,7 @@ class DatabaseTab(QWidget):
         selected_indexes = self.table.selectedIndexes()
         if selected_indexes:
             row = selected_indexes[0].row()
-            path_item = self.table.item(row, 1)  # Path is at column 1
+            path_item = self.table.item(row, 2)  # Path is at column 2 (after star and thumbnail)
             if path_item:
                 clipboard = QApplication.clipboard()
                 clipboard.setText(path_item.text())
@@ -384,7 +446,7 @@ class DatabaseTab(QWidget):
                 for row in sorted(selected_rows):
                     if row < self.table.rowCount():
                         row_data = []
-                        for col in range(1, self.table.columnCount()):  # Skip star column (0)
+                        for col in range(2, self.table.columnCount()):  # Skip star and thumbnail columns (0-1)
                             item = self.table.item(row, col)
                             if item:
                                 # Escape quotes and wrap in quotes if contains comma
@@ -405,7 +467,7 @@ class DatabaseTab(QWidget):
     def toggle_favorite(self, row):
         """Toggle favorite status for the asset in the given row"""
         from db import toggle_favorite
-        path_item = self.table.item(row, 1)  # Path is at column 1
+        path_item = self.table.item(row, 2)  # Path is at column 2
         if path_item:
             file_path = path_item.text()
             new_fav_status = toggle_favorite(file_path)
@@ -427,7 +489,7 @@ class DatabaseTab(QWidget):
             selected_rows.add(index.row())
         
         for row in selected_rows:
-            path_item = self.table.item(row, 1)
+            path_item = self.table.item(row, 2)  # Path is at column 2
             if path_item:
                 file_path = path_item.text()
                 set_favorite(file_path, True)
@@ -443,7 +505,7 @@ class DatabaseTab(QWidget):
             selected_rows.add(index.row())
         
         for row in selected_rows:
-            path_item = self.table.item(row, 1)
+            path_item = self.table.item(row, 2)  # Path is at column 2
             if path_item:
                 file_path = path_item.text()
                 set_favorite(file_path, False)
