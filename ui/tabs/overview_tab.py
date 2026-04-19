@@ -4,12 +4,13 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QFileDialog, QLabel,
     QProgressBar, QSizePolicy, QSpacerItem,
-    QTableWidget, QTableWidgetItem, QComboBox, QHeaderView, QMenu, QShortcut, QApplication, QMessageBox
+    QTableWidget, QTableWidgetItem, QComboBox, QHeaderView, QMenu, QShortcut, QApplication, QMessageBox,
+    QGroupBox, QGridLayout
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QUrl
 from PyQt5.QtGui import QColor, QDesktopServices, QKeySequence, QClipboard
 from scanner import ScanWorker
-from db import fetch_flagged_assets
+from db import fetch_flagged_assets, get_database_statistics
 import os
 
 
@@ -24,7 +25,8 @@ class OverviewTab(QWidget):
         self.all_logs = []  # Store fetched logs
 
         self._build_ui()
-        self.load_logs() # Load any existing logs on startup
+        self.load_logs()  # Load any existing logs on startup
+        self.refresh_statistics()  # Load statistics on startup
 
     def _build_ui(self):
         main_layout = QVBoxLayout()
@@ -66,6 +68,34 @@ class OverviewTab(QWidget):
         control_layout.addWidget(self.start_btn)
         control_layout.addWidget(self.stop_btn)
         control_layout.addSpacerItem(QSpacerItem(20, 20, QSizePolicy.Expanding))
+
+        # ===== Statistics Panel =====
+        stats_group = QGroupBox("Database Statistics")
+        stats_layout = QGridLayout()
+        stats_layout.setSpacing(15)
+        
+        self.stats_total_assets = QLabel("Total Assets: 0")
+        self.stats_total_assets.setStyleSheet("font-size: 12px;")
+        
+        self.stats_total_vram = QLabel("Total VRAM: 0 MB")
+        self.stats_total_vram.setStyleSheet("font-size: 12px;")
+        
+        self.stats_avg_vram = QLabel("Average VRAM: 0 MB")
+        self.stats_avg_vram.setStyleSheet("font-size: 12px;")
+        
+        self.stats_type_breakdown = QLabel("Assets: 0 images, 0 other")
+        self.stats_type_breakdown.setStyleSheet("font-size: 12px;")
+        
+        stats_layout.addWidget(self.stats_total_assets, 0, 0)
+        stats_layout.addWidget(self.stats_total_vram, 0, 1)
+        stats_layout.addWidget(self.stats_avg_vram, 1, 0)
+        stats_layout.addWidget(self.stats_type_breakdown, 1, 1)
+        
+        stats_group.setLayout(stats_layout)
+        stats_group.setStyleSheet(
+            "QGroupBox { border: 1px solid #45475a; border-radius: 5px; margin-top: 10px; padding-top: 10px; }"
+            "QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; padding: 0 3px; }"
+        )
 
         # ===== Progress =====
         self.progress_bar = QProgressBar()
@@ -119,6 +149,7 @@ class OverviewTab(QWidget):
         # ===== Assemble Layout =====
         main_layout.addLayout(folder_layout)
         main_layout.addLayout(control_layout)
+        main_layout.addWidget(stats_group)
         main_layout.addWidget(self.progress_bar)
         main_layout.addWidget(self.status_label)
         main_layout.addLayout(logs_layout) # Replaced stretch with logs
@@ -218,9 +249,30 @@ class OverviewTab(QWidget):
         db_tab.load_data()
         
         self.load_logs()
+        self.refresh_statistics()
 
         # Emit signal instead of hacking UI hierarchy
         self.scan_completed_signal.emit()
+
+    def refresh_statistics(self):
+        """Refresh the statistics panel with current database data"""
+        try:
+            stats = get_database_statistics()
+            
+            # Update labels
+            self.stats_total_assets.setText(f"Total Assets: {stats['total_assets']}")
+            self.stats_total_vram.setText(f"Total VRAM: {stats['total_vram_mb']:.2f} MB")
+            self.stats_avg_vram.setText(f"Average VRAM: {stats['avg_vram_mb']:.2f} MB")
+            
+            # Format type breakdown
+            type_parts = []
+            for asset_type in sorted(stats['asset_type_counts'].keys()):
+                count = stats['asset_type_counts'][asset_type]
+                type_parts.append(f"{count} {asset_type}s")
+            type_str = ", ".join(type_parts) if type_parts else "No assets"
+            self.stats_type_breakdown.setText(f"Assets: {type_str}")
+        except Exception as e:
+            print(f"Error refreshing statistics: {e}")
 
     def load_logs(self):
         try:
