@@ -1,12 +1,16 @@
 import sys
+import os
 from PyQt5.QtWidgets import QApplication
 from ui.main_window import MainWindow
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     
+    # Create cache directory for thumbnails
+    cache_dir = os.path.join(os.path.dirname(__file__), ".cache", "thumbnails")
+    os.makedirs(cache_dir, exist_ok=True)
+    
     # Load and apply QSS theme
-    import os
     style_path = os.path.join(os.path.dirname(__file__), "ui", "style.qss")
     if os.path.exists(style_path):
         with open(style_path, "r", encoding="utf-8") as f:
