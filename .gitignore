@@ -208,3 +208,4 @@ __marimo__/
 PROJECT_CONTEXT.md
 assets.db
 test/
+generate_test_data.py
