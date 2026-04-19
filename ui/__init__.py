@@ -48,15 +48,53 @@ class MainWindow(QMainWindow):
         file_menu = menubar.addMenu("File")
         
         load_action = QAction("Load Database...", self)
+        load_action.setShortcut(QKeySequence.Open)  # Ctrl+O
         load_action.triggered.connect(self.load_database)
         file_menu.addAction(load_action)
         
         save_action = QAction("Save Database As...", self)
+        save_action.setShortcut(QKeySequence.SaveAs)  # Ctrl+Shift+S
         save_action.triggered.connect(self.save_database)
         file_menu.addAction(save_action)
+        
+        export_action = QAction("Export Database...", self)
+        export_action.setShortcut(QKeySequence("Ctrl+E"))  # Ctrl+E
+        export_action.triggered.connect(self.export_database)
+        file_menu.addAction(export_action)
+        
+        file_menu.addSeparator()
+        
+        refresh_action = QAction("Refresh", self)
+        refresh_action.setShortcut(QKeySequence.Refresh)  # Ctrl+R
+        refresh_action.triggered.connect(self.refresh_all_tabs)
+        file_menu.addAction(refresh_action)
+        
+        file_menu.addSeparator()
+        
+        exit_action = QAction("Exit", self)
+        exit_action.setShortcut(QKeySequence.Quit)  # Ctrl+Q
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
 
         # View Menu
         view_menu = menubar.addMenu("View")
+        
+        overview_action = QAction("Overview Tab", self)
+        overview_action.setShortcut(QKeySequence("Ctrl+1"))
+        overview_action.triggered.connect(lambda: self.tabs.setCurrentIndex(0))
+        view_menu.addAction(overview_action)
+        
+        database_action = QAction("Database Tab", self)
+        database_action.setShortcut(QKeySequence("Ctrl+2"))
+        database_action.triggered.connect(lambda: self.tabs.setCurrentIndex(1))
+        view_menu.addAction(database_action)
+        
+        visualization_action = QAction("Visualization Tab", self)
+        visualization_action.setShortcut(QKeySequence("Ctrl+3"))
+        visualization_action.triggered.connect(lambda: self.tabs.setCurrentIndex(2))
+        view_menu.addAction(visualization_action)
+        
+        view_menu.addSeparator()
         
         dark_theme_action = QAction("Dark Theme", self, checkable=True)
         dark_theme_action.setChecked(self.current_theme == "dark")
@@ -89,6 +127,11 @@ class MainWindow(QMainWindow):
             
     def save_database(self):
         file_path, _ = QFileDialog.getSaveFileName(self, "Save Database As", "", "SQLite Databases (*.db);;All Files (*)")
+        if file_path:
+            export_db(file_path)
+    
+    def export_database(self):
+        file_path, _ = QFileDialog.getSaveFileName(self, "Export Database", "", "SQLite Databases (*.db);;All Files (*)")
         if file_path:
             export_db(file_path)
 
