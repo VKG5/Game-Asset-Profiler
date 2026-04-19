@@ -213,3 +213,114 @@ def fetch_favorites():
         cursor = conn.cursor()
         cursor.execute(query)
         return cursor.fetchall()
+
+
+def get_database_statistics():
+    """
+    Returns dictionary with database statistics:
+    {
+        'total_assets': int,
+        'total_vram_mb': float,
+        'avg_vram_mb': float,
+        'asset_type_counts': {'image': int, 'other': int, ...},
+        'asset_count_with_insights': int
+    }
+    """
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        
+        # Total assets count
+        cursor.execute("SELECT COUNT(*) FROM assets")
+        total_assets = cursor.fetchone()[0]
+        
+        # Total and average VRAM
+        cursor.execute("SELECT SUM(vram_estimate_mb), AVG(vram_estimate_mb) FROM assets")
+        result = cursor.fetchone()
+        total_vram_mb = result[0] if result[0] else 0.0
+        avg_vram_mb = result[1] if result[1] else 0.0
+        
+        # Asset type breakdown
+        cursor.execute("SELECT type, COUNT(*) FROM assets GROUP BY type")
+        asset_type_counts = {row[0]: row[1] for row in cursor.fetchall()}
+        
+        # Assets with insights
+        cursor.execute("SELECT COUNT(*) FROM assets WHERE insights IS NOT NULL AND insights != ''")
+        asset_count_with_insights = cursor.fetchone()[0]
+        
+        return {
+            'total_assets': total_assets,
+            'total_vram_mb': float(total_vram_mb),
+            'avg_vram_mb': float(avg_vram_mb),
+            'asset_type_counts': asset_type_counts,
+            'asset_count_with_insights': asset_count_with_insights
+        }
+
+
+def search_assets_advanced(search_query=None, asset_type=None, min_vram=None, use_regex=False):
+    """
+    Advanced search with support for regex patterns and combined filters.
+    
+    Args:
+        search_query: Search term (LIKE or regex pattern)
+        asset_type: Filter by type (image, other, None for all)
+        min_vram: Minimum VRAM in MB (None for all)
+        use_regex: If True, treat search_query as regex pattern
+    
+    Returns:
+        List of asset tuples: (path, type, size_bytes, width, height, channels, vram_mb, insights, is_favorite)
+    """
+    import re
+    
+    conditions = []
+    params = []
+    
+    # Build base SQL query with filters
+    if asset_type:
+        conditions.append("type = ?")
+        params.append(asset_type)
+    
+    if min_vram is not None:
+        conditions.append("vram_estimate_mb >= ?")
+        params.append(min_vram)
+    
+    where_clause = " AND ".join(conditions)
+    if where_clause:
+        where_clause = "WHERE " + where_clause
+    
+    query = f"""
+    SELECT path, type, size_bytes, width, height, channels, vram_estimate_mb, insights, is_favorite
+    FROM assets
+    {where_clause}
+    ORDER BY vram_estimate_mb DESC
+    """
+    
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(query, params)
+        all_results = cursor.fetchall()
+    
+    # Apply search filter (either regex or LIKE)
+    if not search_query:
+        return all_results
+    
+    filtered_results = []
+    search_query_lower = search_query.lower()
+    
+    if use_regex:
+        try:
+            pattern = re.compile(search_query_lower, re.IGNORECASE)
+            for row in all_results:
+                if pattern.search(row[0].lower()):  # Search in path
+                    filtered_results.append(row)
+        except re.error:
+            # Fallback to LIKE on regex error
+            for row in all_results:
+                if search_query_lower in row[0].lower():
+                    filtered_results.append(row)
+    else:
+        # Simple LIKE search
+        for row in all_results:
+            if search_query_lower in row[0].lower():
+                filtered_results.append(row)
+    
+    return filtered_results
