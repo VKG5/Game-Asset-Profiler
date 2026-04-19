@@ -4,13 +4,14 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QTableWidget, QTableWidgetItem,
     QLineEdit, QLabel, QComboBox, QPushButton,
-    QTreeWidget, QTreeWidgetItem, QMenu, QApplication, QFileDialog, QMessageBox
+    QTreeWidget, QTreeWidgetItem, QMenu, QApplication, QFileDialog, QMessageBox,
+    QCheckBox
 )
 from PyQt5.QtCore import Qt, QUrl, QTimer
 from PyQt5.QtGui import QColor, QDesktopServices, QKeySequence, QClipboard
 from PyQt5.QtWidgets import QShortcut
 
-from db import filter_assets
+from db import filter_assets, search_assets_advanced
 import os
 
 
@@ -18,6 +19,10 @@ class DatabaseTab(QWidget):
     def __init__(self):
         super().__init__()
         self.current_rows = []
+        self.search_debounce_timer = QTimer()
+        self.search_debounce_timer.setSingleShot(True)
+        self.search_debounce_timer.timeout.connect(self.load_data)
+        self.recent_searches = []
         self._build_ui()
         self.load_data()
 
@@ -30,18 +35,30 @@ class DatabaseTab(QWidget):
         filter_layout = QHBoxLayout()
 
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Search by path...")
+        self.search_input.setPlaceholderText("Search by path (live)...")
+        # Connect with debounce
+        self.search_input.textChanged.connect(self.on_search_text_changed)
 
         self.type_filter = QComboBox()
         self.type_filter.addItems(["All", "image", "other"])
+        # Connect immediately (no debounce for dropdown)
+        self.type_filter.currentTextChanged.connect(self.load_data)
 
         self.vram_filter = QComboBox()
         self.vram_filter.addItems([
             "All", "> 10 MB", "> 50 MB", "> 100 MB"
         ])
+        # Connect immediately (no debounce for dropdown)
+        self.vram_filter.currentTextChanged.connect(self.load_data)
 
-        self.refresh_btn = QPushButton("Apply Filters")
-        self.refresh_btn.clicked.connect(self.load_data)
+        # Regex mode toggle
+        self.regex_mode_checkbox = QCheckBox("Regex Mode")
+        self.regex_mode_checkbox.setStyleSheet("font-size: 11px;")
+        self.regex_mode_checkbox.stateChanged.connect(self.on_regex_mode_changed)
+
+        # Clear filters button
+        self.clear_filters_btn = QPushButton("Clear Filters")
+        self.clear_filters_btn.clicked.connect(self.clear_all_filters)
 
         self.asset_count_label = QLabel("0 assets")
         self.asset_count_label.setStyleSheet("font-size: 12px; color: #a6adc8;")
@@ -50,7 +67,8 @@ class DatabaseTab(QWidget):
         filter_layout.addWidget(self.search_input)
         filter_layout.addWidget(self.type_filter)
         filter_layout.addWidget(self.vram_filter)
-        filter_layout.addWidget(self.refresh_btn)
+        filter_layout.addWidget(self.regex_mode_checkbox)
+        filter_layout.addWidget(self.clear_filters_btn)
         filter_layout.addStretch()
         filter_layout.addWidget(self.asset_count_label)
 
@@ -136,10 +154,28 @@ class DatabaseTab(QWidget):
         QShortcut(QKeySequence.Refresh, self).activated.connect(self.load_data)
 
     # ========================= Data =========================
+    def on_search_text_changed(self):
+        """Debounce search input changes (300ms)"""
+        self.search_debounce_timer.stop()
+        self.search_debounce_timer.start(300)
+
+    def on_regex_mode_changed(self):
+        """When regex mode is toggled, reload data"""
+        if self.search_input.text():
+            self.load_data()
+
+    def clear_all_filters(self):
+        """Clear all filter criteria"""
+        self.search_input.clear()
+        self.type_filter.setCurrentIndex(0)
+        self.vram_filter.setCurrentIndex(0)
+        self.regex_mode_checkbox.setChecked(False)
+
     def load_data(self):
-        search_text = self.search_input.text().lower()
+        search_text = self.search_input.text()
         selected_type = self.type_filter.currentText()
         vram_option = self.vram_filter.currentText()
+        use_regex = self.regex_mode_checkbox.isChecked()
 
         min_vram = None
         if vram_option == "> 10 MB": min_vram = 10
@@ -148,10 +184,13 @@ class DatabaseTab(QWidget):
 
         asset_type = None if selected_type == "All" else selected_type
 
-        rows = filter_assets(min_vram=min_vram, asset_type=asset_type)
-
-        if search_text:
-            rows = [r for r in rows if search_text in r[0].lower()]
+        # Use advanced search with regex support
+        rows = search_assets_advanced(
+            search_query=search_text if search_text else None,
+            asset_type=asset_type,
+            min_vram=min_vram,
+            use_regex=use_regex
+        )
 
         self.current_rows = rows
 
