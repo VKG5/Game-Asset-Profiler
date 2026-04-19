@@ -282,10 +282,13 @@ class DatabaseTab(QWidget):
             if os.path.exists(path):
                 thumb = generate_thumbnail(path, size=(80, 80))
                 if thumb:
-                    # Convert PIL image to QPixmap
+                    # Convert PIL image to QPixmap via bytes
                     import io
-                    from PIL import ImageQt
-                    pixmap = ImageQt.toqpixmap(thumb)
+                    buffer = io.BytesIO()
+                    thumb.save(buffer, format='PNG')
+                    buffer.seek(0)
+                    pixmap = QPixmap()
+                    pixmap.loadFromData(buffer.getvalue(), 'PNG')
                     self.thumbnail_cache[path] = pixmap
                     item.setData(Qt.DecorationRole, pixmap)
         
