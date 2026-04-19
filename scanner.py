@@ -5,7 +5,7 @@ from PyQt5.QtCore import QThread, pyqtSignal
 
 from db import get_connection, upsert_asset_with_insights
 from metrics import analyze_image
-from insights import analyze_asset
+from insights import analyze_asset_with_sequences
 
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".tga", ".bmp", ".dds")
 
@@ -39,7 +39,8 @@ class ScanWorker(QThread):
                 try:
                     row = self._process_file(path)
                     if row:
-                        insights = analyze_asset(row)
+                        # Use sequence-aware insight analysis
+                        insights = analyze_asset_with_sequences(row, all_files)
                         insights_str = " | ".join(insights)
 
                         upsert_asset_with_insights(conn, row + (insights_str,))
