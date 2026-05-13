@@ -234,6 +234,10 @@ class MainWindow(QMainWindow):
     def apply_theme(self, theme_name):
         """Apply theme and save preference"""
         self.current_theme = theme_name
+        
+        # Save preference FIRST so any internal style updates (like buttons in tabs) read the correct new theme
+        self.settings.setValue("theme", theme_name)
+        
         stylesheet = get_theme(theme_name)
         self.setStyleSheet(stylesheet)
         
@@ -244,9 +248,6 @@ class MainWindow(QMainWindow):
         # Update menu checkboxes
         self.dark_theme_action.setChecked(theme_name == "dark")
         self.light_theme_action.setChecked(theme_name == "light")
-        
-        # Save preference
-        self.settings.setValue("theme", theme_name)
 
     def closeEvent(self, event):
         """Clear the database when the application is closed to ensure clean startup."""

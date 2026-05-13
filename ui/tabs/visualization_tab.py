@@ -1,6 +1,7 @@
 import matplotlib
 matplotlib.use('Qt5Agg')
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
 
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QHBoxLayout, QPushButton, QShortcut
@@ -53,7 +54,7 @@ class VisualizationTab(QWidget):
         # Removed hardcoded color so it respects the active theme
         title.setStyleSheet("font-size: 18px; font-weight: bold;")
         
-        # Chart type toggle buttons - Changed setFixedWidth to setMinimumWidth to fix clipping
+        # Chart type toggle buttons - using setMinimumWidth to fix clipping
         self.severity_btn = QPushButton("Severity Distribution")
         self.severity_btn.setMinimumWidth(180)
         self.severity_btn.clicked.connect(self.show_severity_chart)
@@ -76,6 +77,17 @@ class VisualizationTab(QWidget):
 
         # Matplotlib canvas
         self.canvas = MplCanvas(self, width=8, height=6, dpi=100)
+        
+        # Matplotlib standard toolbar (Zoom, Pan, Save, etc)
+        self.toolbar = NavigationToolbar(self.canvas, self)
+        self.toolbar.setStyleSheet("background-color: transparent; border: none;")
+        
+        # Layout to push the toolbar strictly to the top right of the canvas
+        toolbar_layout = QHBoxLayout()
+        toolbar_layout.addStretch()
+        toolbar_layout.addWidget(self.toolbar)
+
+        self.layout.addLayout(toolbar_layout)
         self.layout.addWidget(self.canvas)
 
         self.setLayout(self.layout)
@@ -98,12 +110,13 @@ class VisualizationTab(QWidget):
         """Highlights the active chart mode button based on the current theme."""
         theme = QSettings("GameAssetProfiler", "GameAssetProfiler").value("theme", "dark")
         active_bg = "#45475a" if theme == "dark" else "#d0d0d0"
+        inactive_bg = "#313244" if theme == "dark" else "#e0e0e0"
         
         if self.chart_mode == "severity":
             self.severity_btn.setStyleSheet(f"background-color: {active_bg};")
-            self.trending_btn.setStyleSheet("")
+            self.trending_btn.setStyleSheet(f"background-color: {inactive_bg};")
         else:
-            self.severity_btn.setStyleSheet("")
+            self.severity_btn.setStyleSheet(f"background-color: {inactive_bg};")
             self.trending_btn.setStyleSheet(f"background-color: {active_bg};")
 
     def show_severity_chart(self):
