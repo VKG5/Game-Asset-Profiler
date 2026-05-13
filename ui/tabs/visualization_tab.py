@@ -4,7 +4,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QHBoxLayout, QPushButton, QShortcut
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QSettings
 from PyQt5.QtGui import QKeySequence
 from collections import defaultdict
 
@@ -13,18 +13,27 @@ from db import fetch_flagged_assets
 class MplCanvas(FigureCanvas):
     def __init__(self, parent=None, width=5, height=4, dpi=100):
         self.fig = Figure(figsize=(width, height), dpi=dpi)
-        # Apply strict dark theme colors
-        self.fig.patch.set_facecolor('#1e1e2e')
         self.axes = self.fig.add_subplot(111)
-        self.axes.set_facecolor('#1e1e2e')
-        self.axes.spines['bottom'].set_color('#cdd6f4')
-        self.axes.spines['top'].set_color('none') 
-        self.axes.spines['right'].set_color('none')
-        self.axes.spines['left'].set_color('#cdd6f4')
-        self.axes.tick_params(axis='x', colors='#cdd6f4')
-        self.axes.tick_params(axis='y', colors='#cdd6f4')
         
         super(MplCanvas, self).__init__(self.fig)
+        
+        # Apply initial theme
+        theme = QSettings("GameAssetProfiler", "GameAssetProfiler").value("theme", "dark")
+        self.apply_theme(theme == "dark")
+
+    def apply_theme(self, is_dark):
+        """Update canvas colors based on the application theme"""
+        bg_color = '#1e1e2e' if is_dark else '#f5f5f5'
+        text_color = '#cdd6f4' if is_dark else '#333333'
+        
+        self.fig.patch.set_facecolor(bg_color)
+        self.axes.set_facecolor(bg_color)
+        self.axes.spines['bottom'].set_color(text_color)
+        self.axes.spines['top'].set_color('none') 
+        self.axes.spines['right'].set_color('none')
+        self.axes.spines['left'].set_color(text_color)
+        self.axes.tick_params(axis='x', colors=text_color)
+        self.axes.tick_params(axis='y', colors=text_color)
 
 
 class VisualizationTab(QWidget):
@@ -41,20 +50,20 @@ class VisualizationTab(QWidget):
 
         header_layout = QHBoxLayout()
         title = QLabel("Insights Visualization")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #cdd6f4;")
+        # Removed hardcoded color so it respects the active theme
+        title.setStyleSheet("font-size: 18px; font-weight: bold;")
         
-        # Chart type toggle buttons
+        # Chart type toggle buttons - Changed setFixedWidth to setMinimumWidth to fix clipping
         self.severity_btn = QPushButton("Severity Distribution")
-        self.severity_btn.setFixedWidth(150)
+        self.severity_btn.setMinimumWidth(180)
         self.severity_btn.clicked.connect(self.show_severity_chart)
-        self.severity_btn.setStyleSheet("background-color: #45475a;")
         
         self.trending_btn = QPushButton("Insights Trending")
-        self.trending_btn.setFixedWidth(150)
+        self.trending_btn.setMinimumWidth(180)
         self.trending_btn.clicked.connect(self.show_trending_chart)
         
         self.refresh_btn = QPushButton("Refresh Data")
-        self.refresh_btn.setFixedWidth(120)
+        self.refresh_btn.setMinimumWidth(120)
         self.refresh_btn.clicked.connect(self.load_data)
         
         header_layout.addWidget(title)
@@ -70,23 +79,43 @@ class VisualizationTab(QWidget):
         self.layout.addWidget(self.canvas)
 
         self.setLayout(self.layout)
+        
+        # Initialize button styles
+        self._update_button_styles()
 
         # ========================= Keyboard Shortcuts =========================
         # Ctrl+R: Refresh visualization data
         QShortcut(QKeySequence.Refresh, self).activated.connect(self.load_data)
 
+    def apply_theme(self, theme_name):
+        """Called externally by MainWindow to dynamically update theme."""
+        is_dark = theme_name == "dark"
+        self.canvas.apply_theme(is_dark)
+        self._update_button_styles()
+        self.load_data()  # Redraw the chart using the new color scheme
+
+    def _update_button_styles(self):
+        """Highlights the active chart mode button based on the current theme."""
+        theme = QSettings("GameAssetProfiler", "GameAssetProfiler").value("theme", "dark")
+        active_bg = "#45475a" if theme == "dark" else "#d0d0d0"
+        
+        if self.chart_mode == "severity":
+            self.severity_btn.setStyleSheet(f"background-color: {active_bg};")
+            self.trending_btn.setStyleSheet("")
+        else:
+            self.severity_btn.setStyleSheet("")
+            self.trending_btn.setStyleSheet(f"background-color: {active_bg};")
+
     def show_severity_chart(self):
         """Switch to severity distribution chart"""
         self.chart_mode = "severity"
-        self.severity_btn.setStyleSheet("background-color: #45475a;")
-        self.trending_btn.setStyleSheet("")
+        self._update_button_styles()
         self.load_data()
 
     def show_trending_chart(self):
         """Switch to insights trending chart"""
         self.chart_mode = "trending"
-        self.severity_btn.setStyleSheet("")
-        self.trending_btn.setStyleSheet("background-color: #45475a;")
+        self._update_button_styles()
         self.load_data()
 
     def load_data(self):
@@ -135,12 +164,16 @@ class VisualizationTab(QWidget):
         """Update the severity distribution bar chart"""
         self.canvas.axes.clear()
         
+        theme = QSettings("GameAssetProfiler", "GameAssetProfiler").value("theme", "dark")
+        text_color = '#cdd6f4' if theme == "dark" else '#333333'
+        empty_color = '#bac2de' if theme == "dark" else '#999999'
+        
         if not severity_counts:
             # Display highly visible empty state
             self.canvas.axes.text(0.5, 0.5, 'No Insights Available', 
                                   horizontalalignment='center', 
                                   verticalalignment='center',
-                                  color='#bac2de', fontsize=14)
+                                  color=empty_color, fontsize=14)
             self.canvas.axes.set_xticks([])
             self.canvas.axes.set_yticks([])
             self.canvas.draw()
@@ -177,15 +210,15 @@ class VisualizationTab(QWidget):
 
         bars = self.canvas.axes.bar(categories, counts, color=colors)
         
-        self.canvas.axes.set_title('Asset Insights by Severity', color='#cdd6f4', pad=20, fontsize=14)
-        self.canvas.axes.set_ylabel('Number of Instances', color='#cdd6f4')
+        self.canvas.axes.set_title('Asset Insights by Severity', color=text_color, pad=20, fontsize=14)
+        self.canvas.axes.set_ylabel('Number of Instances', color=text_color)
         
         # Add values on top of bars
         for bar in bars:
             height = bar.get_height()
             self.canvas.axes.text(bar.get_x() + bar.get_width()/2., height + 0.1,
                                   f'{int(height)}',
-                                  ha='center', va='bottom', color='#cdd6f4', fontsize=11, fontweight='bold')
+                                  ha='center', va='bottom', color=text_color, fontsize=11, fontweight='bold')
 
         self.canvas.draw()
 
@@ -193,12 +226,16 @@ class VisualizationTab(QWidget):
         """Update the insights trending chart (top 10 most frequent insights)"""
         self.canvas.axes.clear()
         
+        theme = QSettings("GameAssetProfiler", "GameAssetProfiler").value("theme", "dark")
+        text_color = '#cdd6f4' if theme == "dark" else '#333333'
+        empty_color = '#bac2de' if theme == "dark" else '#999999'
+        
         if not insight_counts:
             # Display highly visible empty state
             self.canvas.axes.text(0.5, 0.5, 'No Insights Available', 
                                   horizontalalignment='center', 
                                   verticalalignment='center',
-                                  color='#bac2de', fontsize=14)
+                                  color=empty_color, fontsize=14)
             self.canvas.axes.set_xticks([])
             self.canvas.axes.set_yticks([])
             self.canvas.draw()
@@ -240,15 +277,15 @@ class VisualizationTab(QWidget):
         bars = self.canvas.axes.barh(y_positions, counts, color=colors)
         
         self.canvas.axes.set_yticks(y_positions)
-        self.canvas.axes.set_yticklabels(labels, fontsize=9)
-        self.canvas.axes.set_xlabel('Occurrence Count', color='#cdd6f4')
-        self.canvas.axes.set_title('Top Insights by Frequency', color='#cdd6f4', pad=20, fontsize=14)
+        self.canvas.axes.set_yticklabels(labels, fontsize=9, color=text_color)
+        self.canvas.axes.set_xlabel('Occurrence Count', color=text_color)
+        self.canvas.axes.set_title('Top Insights by Frequency', color=text_color, pad=20, fontsize=14)
         
         # Add values at the end of bars
         for i, (bar, count) in enumerate(zip(bars, counts)):
             width = bar.get_width()
             self.canvas.axes.text(width + 0.1, bar.get_y() + bar.get_height()/2.,
                                   f'{int(count)}',
-                                  ha='left', va='center', color='#cdd6f4', fontsize=10, fontweight='bold')
+                                  ha='left', va='center', color=text_color, fontsize=10, fontweight='bold')
         
         self.canvas.draw()

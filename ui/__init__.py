@@ -207,7 +207,7 @@ class MainWindow(QMainWindow):
     def show_about_dialog(self):
         """Show about dialog"""
         about_text = (
-            "Game Asset Profiler v1.2.2\n\n"
+            "Game Asset Profiler v1.2.3\n\n"
             "A PyQt5-based desktop application for analyzing and profiling game assets.\n\n"
             "Features:\n"
             "• Multi-threaded asset scanning\n"
@@ -237,6 +237,10 @@ class MainWindow(QMainWindow):
         stylesheet = get_theme(theme_name)
         self.setStyleSheet(stylesheet)
         
+        # Update visualization tab's internal theme so the Matplotlib chart syncs
+        if hasattr(self, 'visualization_tab'):
+            self.visualization_tab.apply_theme(theme_name)
+        
         # Update menu checkboxes
         self.dark_theme_action.setChecked(theme_name == "dark")
         self.light_theme_action.setChecked(theme_name == "light")
@@ -245,7 +249,7 @@ class MainWindow(QMainWindow):
         self.settings.setValue("theme", theme_name)
 
     def closeEvent(self, event):
-        """Clear the database when the application is closed."""
+        """Clear the database when the application is closed to ensure clean startup."""
         try:
             clear_database()
         except Exception as e:
