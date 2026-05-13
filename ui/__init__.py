@@ -207,7 +207,7 @@ class MainWindow(QMainWindow):
     def show_about_dialog(self):
         """Show about dialog"""
         about_text = (
-            "Game Asset Profiler v1.2\n\n"
+            "Game Asset Profiler v1.2.2\n\n"
             "A PyQt5-based desktop application for analyzing and profiling game assets.\n\n"
             "Features:\n"
             "• Multi-threaded asset scanning\n"

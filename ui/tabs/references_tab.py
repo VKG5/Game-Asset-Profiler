@@ -97,7 +97,7 @@ class ReferencesTab(QWidget):
         self.btn_refresh = QPushButton("Refresh References")
         self.btn_refresh.clicked.connect(self.load_from_db)
         
-        self.btn_migrate = QPushButton("Migrate Selected File & Dependencies")
+        self.btn_migrate = QPushButton("Migrate Selected File")
         self.btn_migrate.clicked.connect(self.migrate_selected)
         self.btn_migrate.setEnabled(False)
         self.btn_migrate.setStyleSheet("background-color: #313244;")
