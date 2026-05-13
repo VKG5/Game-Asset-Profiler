@@ -19,8 +19,8 @@ It introduces a native, high-performance reference auditor that recursively maps
     - [Safe Migrator](#3-safe-migrator)
     - [Asset Categorization](#4-expanded-asset-categorization)
     - [Architecture](#5-ephemeral-and-fast-architecture)
-  - [UI Tabs Reference](#-ui-tabs-reference)
-  - [Keyboard Shortcuts](#-keyboard-shortcuts)
+  - [UI Tabs Reference](#️-ui-tabs-reference)
+  - [Keyboard Shortcuts](#️-keyboard-shortcuts)
   - [Installation \& Usage](#-installation--usage)
 
 ---
