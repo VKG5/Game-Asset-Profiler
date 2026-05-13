@@ -21,6 +21,8 @@ class MainWindow(QMainWindow):
         self.current_theme = self.settings.value("theme", "dark")
 
         init_db()
+        # Clear database on startup to ensure a fresh session without auto-loading old data
+        clear_database()
 
         self.tabs = QTabWidget()
         self.setCentralWidget(self.tabs)
@@ -241,6 +243,14 @@ class MainWindow(QMainWindow):
         
         # Save preference
         self.settings.setValue("theme", theme_name)
+
+    def closeEvent(self, event):
+        """Clear the database when the application is closed."""
+        try:
+            clear_database()
+        except Exception as e:
+            print(f"Error clearing database on exit: {e}")
+        event.accept()
 
 
 class KeyboardShortcutsDialog(QDialog):
