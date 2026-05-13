@@ -42,7 +42,7 @@ class DatabaseTab(QWidget):
         self.search_input.textChanged.connect(self.on_search_text_changed)
 
         self.type_filter = QComboBox()
-        self.type_filter.addItems(["All", "image", "other"])
+        self.type_filter.addItems(["All", "image", "audio", "video", "tscn", "tres", "gd", "shader", "other"])
         # Connect immediately (no debounce for dropdown)
         self.type_filter.currentTextChanged.connect(self.load_data)
 
@@ -292,9 +292,17 @@ class DatabaseTab(QWidget):
                     self.thumbnail_cache[path] = pixmap
                     item.setData(Qt.DecorationRole, pixmap)
         
-        # Show placeholder for non-image files
-        if file_type == "other":
-            item.setText("📄")
+        # Show placeholder for non-image files with matching emojis
+        if file_type != "image":
+            icon = "📄"
+            if file_type == "audio": icon = "🎵"
+            elif file_type == "video": icon = "🎬"
+            elif file_type == "tscn": icon = "📦"
+            elif file_type == "tres": icon = "📝"
+            elif file_type == "gd": icon = "📜"
+            elif file_type == "shader": icon = "🖌️"
+            
+            item.setText(icon)
             item.setTextAlignment(Qt.AlignCenter | Qt.AlignVCenter)
         
         return item

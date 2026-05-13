@@ -3,11 +3,13 @@
 import os
 from PyQt5.QtCore import QThread, pyqtSignal
 
-from db import get_connection, upsert_asset_with_insights
+from db import get_connection, upsert_asset_with_insights, set_project_root
 from metrics import analyze_image
 from insights import analyze_asset_with_sequences
 
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".tga", ".bmp", ".dds")
+AUDIO_EXTENSIONS = (".wav", ".ogg", ".mp3")
+VIDEO_EXTENSIONS = (".mp4", ".webm", ".ks9")
 
 
 class ScanWorker(QThread):
@@ -24,6 +26,9 @@ class ScanWorker(QThread):
         self._is_running = False
 
     def run(self):
+        # Store the project root globally in the database so other tabs can reference it dynamically
+        set_project_root(self.root_path)
+        
         all_files = self._collect_files(self.root_path)
         total_files = len(all_files)
 
@@ -71,13 +76,29 @@ class ScanWorker(QThread):
         except Exception:
             size_bytes = 0
 
+        # Categorize file types
+        a_type = "other"
         if ext in IMAGE_EXTENSIONS:
-            result = analyze_image(path)
+            a_type = "image"
+        elif ext in AUDIO_EXTENSIONS:
+            a_type = "audio"
+        elif ext in VIDEO_EXTENSIONS:
+            a_type = "video"
+        elif ext == ".tscn":
+            a_type = "tscn"
+        elif ext == ".tres":
+            a_type = "tres"
+        elif ext == ".gd":
+            a_type = "gd"
+        elif ext in (".shader", ".gdshader"):
+            a_type = "shader"
 
+        if a_type == "image":
+            result = analyze_image(path)
             if result:
                 return (
                     path,
-                    "image",
+                    a_type,
                     size_bytes,
                     result["width"],
                     result["height"],
@@ -85,6 +106,6 @@ class ScanWorker(QThread):
                     result["vram_mb"]
                 )
         else:
-            return (path, "other", size_bytes, 0, 0, 0, 0)
+            return (path, a_type, size_bytes, 0, 0, 0, 0)
 
         return None

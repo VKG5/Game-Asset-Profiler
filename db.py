@@ -46,6 +46,14 @@ def init_db():
         )
         """)
 
+        # Settings table for global configurations (e.g., project root)
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+        """)
+
         # Indexes for fast querying (critical for large projects)
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_type ON assets(type)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_vram ON assets(vram_estimate_mb)")
@@ -53,6 +61,23 @@ def init_db():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_favorite ON assets(is_favorite)")
 
         conn.commit()
+
+
+def set_project_root(path):
+    """Store the project root path in the settings table."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('project_root', ?)", (path,))
+        conn.commit()
+
+
+def get_project_root():
+    """Retrieve the project root path from the settings table."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM settings WHERE key = 'project_root'")
+        row = cursor.fetchone()
+        return row[0] if row else None
 
 
 def upsert_asset(data):
@@ -175,6 +200,7 @@ def clear_database():
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("DELETE FROM assets")
+        cursor.execute("DELETE FROM settings WHERE key = 'project_root'")
         conn.commit()
 
 

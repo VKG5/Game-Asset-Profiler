@@ -36,8 +36,10 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.visualization_tab, "Visualization")
         self.tabs.addTab(self.references_tab, "References")
 
+        # Connect the scan completed signal to auto-load the remaining tabs
         self.overview_tab.scan_completed_signal.connect(self.database_tab.load_data)
         self.overview_tab.scan_completed_signal.connect(self.visualization_tab.load_data)
+        self.overview_tab.scan_completed_signal.connect(self.references_tab.load_from_db)
 
         self._create_menu()
         
@@ -146,7 +148,7 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+2"), self).activated.connect(lambda: self.tabs.setCurrentIndex(1))
         # Ctrl+3: Switch to Visualization tab
         QShortcut(QKeySequence("Ctrl+3"), self).activated.connect(lambda: self.tabs.setCurrentIndex(2))
-        # Ctrl+4: Swtich to References tab
+        # Ctrl+4: Switch to References tab
         QShortcut(QKeySequence("Ctrl+4"), self).activated.connect(lambda: self.tabs.setCurrentIndex(3))
         # Ctrl+?: Show keyboard shortcuts
         QShortcut(QKeySequence("Ctrl+?"), self).activated.connect(self.show_shortcuts_dialog)
@@ -203,7 +205,7 @@ class MainWindow(QMainWindow):
     def show_about_dialog(self):
         """Show about dialog"""
         about_text = (
-            "Game Asset Profiler v1.1\n\n"
+            "Game Asset Profiler v1.2\n\n"
             "A PyQt5-based desktop application for analyzing and profiling game assets.\n\n"
             "Features:\n"
             "• Multi-threaded asset scanning\n"
@@ -220,6 +222,7 @@ class MainWindow(QMainWindow):
         self.overview_tab.refresh_statistics()
         self.database_tab.load_data()
         self.visualization_tab.load_data()
+        self.references_tab.load_from_db()
 
     def toggle_theme(self):
         """Toggle between dark and light themes"""
@@ -266,6 +269,7 @@ class KeyboardShortcutsDialog(QDialog):
         shortcuts = [
             ("GLOBAL", ""),
             ("Ctrl+?", "Show keyboard shortcuts"),
+            ("Ctrl+T", "Toggle dark/light theme"),
             ("Ctrl+1", "Switch to Overview tab"),
             ("Ctrl+2", "Switch to Database tab"),
             ("Ctrl+3", "Switch to Visualization tab"),

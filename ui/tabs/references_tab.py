@@ -4,10 +4,13 @@ import shutil
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QTreeWidget, QTreeWidgetItem, QProgressBar, QLabel,
-    QFileDialog, QMessageBox, QSplitter, QHeaderView
+    QFileDialog, QMessageBox, QSplitter
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QColor
+
+from db import get_project_root
+
 
 class DepScannerWorker(QThread):
     progress_updated = pyqtSignal(int)
@@ -25,7 +28,7 @@ class DepScannerWorker(QThread):
     def run(self):
         files_to_scan = []
         # Target Godot specific extensions
-        valid_exts = ('.tscn', '.tres', '.gd', '.material', '.anim')
+        valid_exts = ('.tscn', '.tres', '.gd', '.material', '.anim', '.shader', '.gdshader')
         
         for root, _, files in os.walk(self.root_dir):
             for f in files:
@@ -37,7 +40,7 @@ class DepScannerWorker(QThread):
             self.scan_complete.emit({}, self.root_dir)
             return
 
-        # Regex for Godot 3 & 4 resources, and GDScript preloads
+        # Regex for Godot resources, and GDScript preloads
         pattern_ext = re.compile(r'path="res://([^"]+)"')
         pattern_gd = re.compile(r'preload\("res://([^"]+)"\)')
 
@@ -91,8 +94,8 @@ class ReferencesTab(QWidget):
         # --- Top Controls ---
         controls_layout = QHBoxLayout()
         
-        self.btn_load = QPushButton("Load Godot Project")
-        self.btn_load.clicked.connect(self.load_project)
+        self.btn_refresh = QPushButton("Refresh References")
+        self.btn_refresh.clicked.connect(self.load_from_db)
         
         self.btn_migrate = QPushButton("Migrate Selected File & Dependencies")
         self.btn_migrate.clicked.connect(self.migrate_selected)
@@ -107,7 +110,7 @@ class ReferencesTab(QWidget):
         self.progress_bar.setValue(0)
         self.progress_bar.setTextVisible(False)
         
-        controls_layout.addWidget(self.btn_load)
+        controls_layout.addWidget(self.btn_refresh)
         controls_layout.addWidget(self.btn_migrate)
         controls_layout.addWidget(self.status_label)
         controls_layout.addStretch()
@@ -154,23 +157,27 @@ class ReferencesTab(QWidget):
 
         self.setLayout(main_layout)
 
-    def load_project(self):
-        folder = QFileDialog.getExistingDirectory(self, "Select Godot Project Root")
-        if folder:
-            self.status_label.setText(f"Scanning: {folder}")
-            self.progress_bar.setValue(0)
-            self.btn_load.setEnabled(False)
-            
-            self.worker = DepScannerWorker(folder)
-            self.worker.progress_updated.connect(self.progress_bar.setValue)
-            self.worker.scan_complete.connect(self.on_scan_complete)
-            self.worker.start()
+    def load_from_db(self):
+        """Dynamically load the references graph by pulling the root project directory from settings."""
+        root_dir = get_project_root()
+        if not root_dir or not os.path.exists(root_dir):
+            self.status_label.setText("No project loaded. Please scan a project in the Overview tab.")
+            return
+
+        self.status_label.setText(f"Scanning: {root_dir}")
+        self.progress_bar.setValue(0)
+        self.btn_refresh.setEnabled(False)
+        
+        self.worker = DepScannerWorker(root_dir)
+        self.worker.progress_updated.connect(self.progress_bar.setValue)
+        self.worker.scan_complete.connect(self.on_scan_complete)
+        self.worker.start()
 
     def on_scan_complete(self, graph, root_dir):
         self.graph = graph
         self.project_root = root_dir
         self.status_label.setText(f"Scan complete. Found {len(self.graph)} unique references.")
-        self.btn_load.setEnabled(True)
+        self.btn_refresh.setEnabled(True)
         self.build_folder_tree()
 
     def build_folder_tree(self):
