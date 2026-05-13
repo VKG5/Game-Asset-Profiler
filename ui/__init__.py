@@ -5,6 +5,7 @@ from ui.tabs.overview_tab import OverviewTab
 from ui.tabs.database_tab import DatabaseTab
 from ui.tabs.folder_view_tab import FolderViewTab
 from ui.tabs.visualization_tab import VisualizationTab
+from ui.tabs.references_tab import ReferencesTab
 from db import init_db, set_db_path, export_db, clear_database
 from ui.themes import get_theme
 
@@ -28,10 +29,12 @@ class MainWindow(QMainWindow):
         self.overview_tab = OverviewTab()
         self.database_tab = DatabaseTab()
         self.visualization_tab = VisualizationTab()
+        self.references_tab = ReferencesTab()
 
         self.tabs.addTab(self.overview_tab, "Overview")
         self.tabs.addTab(self.database_tab, "Database")
         self.tabs.addTab(self.visualization_tab, "Visualization")
+        self.tabs.addTab(self.references_tab, "References")
 
         self.overview_tab.scan_completed_signal.connect(self.database_tab.load_data)
         self.overview_tab.scan_completed_signal.connect(self.visualization_tab.load_data)
@@ -99,6 +102,11 @@ class MainWindow(QMainWindow):
         visualization_action.setShortcut(QKeySequence("Ctrl+3"))
         visualization_action.triggered.connect(lambda: self.tabs.setCurrentIndex(2))
         view_menu.addAction(visualization_action)
+
+        references_action = QAction("References Tab", self)
+        references_action.setShortcut(QKeySequence("Ctrl+4"))
+        references_action.triggered.connect(lambda: self.tabs.setCurrentIndex(3))
+        view_menu.addAction(references_action)
         
         view_menu.addSeparator()
         
@@ -138,8 +146,12 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+2"), self).activated.connect(lambda: self.tabs.setCurrentIndex(1))
         # Ctrl+3: Switch to Visualization tab
         QShortcut(QKeySequence("Ctrl+3"), self).activated.connect(lambda: self.tabs.setCurrentIndex(2))
+        # Ctrl+4: Swtich to References tab
+        QShortcut(QKeySequence("Ctrl+4"), self).activated.connect(lambda: self.tabs.setCurrentIndex(3))
         # Ctrl+?: Show keyboard shortcuts
         QShortcut(QKeySequence("Ctrl+?"), self).activated.connect(self.show_shortcuts_dialog)
+        # Ctrl+T: Toggle Theme
+        QShortcut(QKeySequence("Ctrl+T"), self).activated.connect(self.toggle_theme)
 
     def load_database(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "Load Database", "", "SQLite Databases (*.db);;All Files (*)")
@@ -163,7 +175,8 @@ class MainWindow(QMainWindow):
         try:
             stats = get_database_statistics()
             count = stats['total_assets']
-        except:
+        except Exception as e:
+            print(e)
             count = 0
         
         reply = QMessageBox.question(
@@ -190,7 +203,7 @@ class MainWindow(QMainWindow):
     def show_about_dialog(self):
         """Show about dialog"""
         about_text = (
-            "Game Asset Profiler v1.0\n\n"
+            "Game Asset Profiler v1.1\n\n"
             "A PyQt5-based desktop application for analyzing and profiling game assets.\n\n"
             "Features:\n"
             "• Multi-threaded asset scanning\n"
@@ -207,6 +220,11 @@ class MainWindow(QMainWindow):
         self.overview_tab.refresh_statistics()
         self.database_tab.load_data()
         self.visualization_tab.load_data()
+
+    def toggle_theme(self):
+        """Toggle between dark and light themes"""
+        new_theme = "light" if self.current_theme == "dark" else "dark"
+        self.apply_theme(new_theme)
 
     def apply_theme(self, theme_name):
         """Apply theme and save preference"""
@@ -251,6 +269,7 @@ class KeyboardShortcutsDialog(QDialog):
             ("Ctrl+1", "Switch to Overview tab"),
             ("Ctrl+2", "Switch to Database tab"),
             ("Ctrl+3", "Switch to Visualization tab"),
+            ("Ctrl+4", "Switch to References tab"),
             ("Ctrl+R", "Refresh all tabs"),
             ("Ctrl+O", "Load database"),
             ("Ctrl+Shift+S", "Save database as"),
