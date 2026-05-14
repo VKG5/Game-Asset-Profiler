@@ -128,7 +128,7 @@ class DatabaseTab(QWidget):
         self.table = QTableWidget()
         self.table.setColumnCount(11)
         self.table.setHorizontalHeaderLabels([
-            "★", "Thumbnail", "Path", "Type", "Size", "Width", "Height", "Channels", "VRAM (MB)", "Compression", "Insights"
+            "★", "Thumbnail", "Path", "Type", "Size (MB)", "Width", "Height", "Channels", "VRAM (MB)", "Compression", "Insights"
         ])
         self.table.setColumnWidth(0, 30)  # Star column width
         self.table.setColumnWidth(1, 90)  # Thumbnail column width
@@ -277,7 +277,16 @@ class DatabaseTab(QWidget):
             # Columns 2-10: Asset data
             for j, value in enumerate(row[:9]):  # Iterate through first 9 values (exclude is_favorite)
                 col_index = j + 2  # Shift by 2 for the star and thumbnail columns
-                item = QTableWidgetItem(str(value))
+                
+                # Size column (index 2 in row -> index 4 in table): Convert bytes to MB
+                if j == 2:
+                    try:
+                        size_mb = float(value) / (1024 * 1024)
+                        item = QTableWidgetItem(f"{size_mb:.5f}")
+                    except (ValueError, TypeError):
+                        item = QTableWidgetItem("0.00")
+                else:
+                    item = QTableWidgetItem(str(value))
 
                 # VRAM column (index 6 in row -> index 8 in table)
                 if j == 6:
@@ -488,7 +497,7 @@ class DatabaseTab(QWidget):
         try:
             with open(file_path, 'w', encoding='utf-8') as f:
                 # Updated header for CSV
-                f.write("Path,Type,Size (Bytes),Width,Height,Channels,VRAM (MB),Compression,Insights,Favorite\n")
+                f.write("Path,Type,Size (MB),Width,Height,Channels,VRAM (MB),Compression,Insights,Favorite\n")
                 
                 for row in sorted(selected_rows):
                     if row < self.table.rowCount():
