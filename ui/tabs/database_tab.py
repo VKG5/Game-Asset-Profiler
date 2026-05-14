@@ -43,7 +43,7 @@ class DatabaseTab(QWidget):
 
         self.type_filter = QComboBox()
         self.type_filter.addItems(["All", "image", "audio", "video", "tscn", "tres", "gd", "shader", "other"])
-        self.type_filter.currentTextChanged.connect(self.load_data)
+        self.type_filter.currentTextChanged.connect(self.on_type_changed)
 
         self.vram_filter = QComboBox()
         self.vram_filter.addItems([
@@ -176,13 +176,52 @@ class DatabaseTab(QWidget):
         if self.search_input.text():
             self.load_data()
 
+    def on_type_changed(self, selected_type):
+        """Dynamically update compression filter options based on asset type."""
+        self.compression_filter.blockSignals(True)
+        self.compression_filter.clear()
+        
+        if selected_type == "image":
+            self.compression_filter.addItems(["All", "Lossless", "Lossy", "VRAM Compression", "Uncompressed", "N/A"])
+        elif selected_type == "audio":
+            self.compression_filter.addItems(["All", "Disabled", "RAM (Ima-ADPCM)", "N/A"])
+        elif selected_type == "All":
+            self.compression_filter.addItems([
+                "All", "Lossless", "Lossy", "VRAM Compression", "Uncompressed", "Disabled", "RAM (Ima-ADPCM)", "N/A"
+            ])
+        else:
+            self.compression_filter.addItems(["All", "N/A"])
+            
+        self.compression_filter.blockSignals(False)
+        self.load_data()
+
     def clear_all_filters(self):
         """Clear all filter criteria"""
+        self.search_input.blockSignals(True)
         self.search_input.clear()
+        self.search_input.blockSignals(False)
+        
+        self.type_filter.blockSignals(True)
         self.type_filter.setCurrentIndex(0)
+        self.type_filter.blockSignals(False)
+        
+        self.vram_filter.blockSignals(True)
         self.vram_filter.setCurrentIndex(0)
+        self.vram_filter.blockSignals(False)
+        
+        self.compression_filter.blockSignals(True)
+        self.compression_filter.clear()
+        self.compression_filter.addItems([
+            "All", "Lossless", "Lossy", "VRAM Compression", "Uncompressed", "Disabled", "RAM (Ima-ADPCM)", "N/A"
+        ])
         self.compression_filter.setCurrentIndex(0)
+        self.compression_filter.blockSignals(False)
+        
+        self.regex_mode_checkbox.blockSignals(True)
         self.regex_mode_checkbox.setChecked(False)
+        self.regex_mode_checkbox.blockSignals(False)
+        
+        self.load_data()
 
     def load_data(self):
         search_text = self.search_input.text()
