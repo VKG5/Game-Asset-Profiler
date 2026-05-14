@@ -47,6 +47,13 @@ def init_db():
         )
         """)
 
+        # Ensure schema is up to date (Migration to patch older databases)
+        cursor.execute("PRAGMA table_info(assets)")
+        columns = [info[1] for info in cursor.fetchall()]
+        
+        if "compression" not in columns:
+            cursor.execute("ALTER TABLE assets ADD COLUMN compression TEXT DEFAULT 'N/A'")
+
         # Settings table for global configurations (e.g., project root)
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS settings (
