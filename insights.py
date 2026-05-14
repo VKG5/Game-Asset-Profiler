@@ -12,12 +12,6 @@ def detect_numbered_sequences(all_paths):
     """
     Detect numbered image sequences (e.g., texture_001.png, texture_002.png)
     Returns a set of base names that have sequences
-    
-    Args:
-        all_paths: List of all file paths in project
-    
-    Returns:
-        Dictionary: {base_name: [list of sequence numbers]}
     """
     sequence_pattern = re.compile(r'^(.+?)[-_]?(\d{2,})(\.[a-zA-Z0-9]+)$')
     sequences = defaultdict(list)
@@ -43,10 +37,10 @@ def detect_numbered_sequences(all_paths):
 def analyze_asset(row):
     """
     row schema:
-    (path, type, size_bytes, width, height, channels, vram_mb)
+    (path, type, size_bytes, width, height, channels, vram_mb, compression)
     returns list[str] insights
     """
-    path, a_type, size_bytes, w, h, ch, vram = row
+    path, a_type, size_bytes, w, h, ch, vram, compression = row
 
     insights = []
 
@@ -101,13 +95,6 @@ def analyze_asset(row):
 def analyze_asset_with_sequences(row, all_paths=None):
     """
     Enhanced analyze_asset that also checks for numbered sequences.
-    
-    Args:
-        row: Standard asset row (path, type, size_bytes, width, height, channels, vram_mb)
-        all_paths: Optional list of all file paths for sequence detection
-    
-    Returns:
-        List of insight strings
     """
     insights = analyze_asset(row)
     

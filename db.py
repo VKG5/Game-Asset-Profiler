@@ -40,6 +40,7 @@ def init_db():
             height INTEGER,
             channels INTEGER,
             vram_estimate_mb REAL,
+            compression TEXT,
             insights TEXT,
             is_favorite INTEGER DEFAULT 0,
             last_scanned TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -54,7 +55,7 @@ def init_db():
         )
         """)
 
-        # Indexes for fast querying (critical for large projects)
+        # Indexes for fast querying
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_type ON assets(type)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_vram ON assets(vram_estimate_mb)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_path ON assets(path)")
@@ -83,14 +84,14 @@ def get_project_root():
 def upsert_asset(data):
     """
     Insert or update asset entry
-    data = (path, type, size_bytes, width, height, channels, vram_mb)
+    data = (path, type, size_bytes, width, height, channels, vram_mb, compression)
     """
     with get_connection() as conn:
         cursor = conn.cursor()
 
         cursor.execute("""
-        INSERT INTO assets (path, type, size_bytes, width, height, channels, vram_estimate_mb)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO assets (path, type, size_bytes, width, height, channels, vram_estimate_mb, compression)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(path) DO UPDATE SET
             type=excluded.type,
             size_bytes=excluded.size_bytes,
@@ -98,25 +99,22 @@ def upsert_asset(data):
             height=excluded.height,
             channels=excluded.channels,
             vram_estimate_mb=excluded.vram_estimate_mb,
+            compression=excluded.compression,
             last_scanned=CURRENT_TIMESTAMP
         """, data)
 
         conn.commit()
 
 
-"""
-Add column (only if you recreate DB or handle migration):
-ALTER TABLE assets ADD COLUMN insights TEXT DEFAULT '';
-"""
 def upsert_asset_with_insights(conn, data):
     """
-    data = (path, type, size_bytes, width, height, channels, vram_mb, insights_str)
+    data = (path, type, size_bytes, width, height, channels, vram_mb, compression, insights_str)
     """
     cursor = conn.cursor()
 
     cursor.execute("""
-    INSERT INTO assets (path, type, size_bytes, width, height, channels, vram_estimate_mb, insights)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO assets (path, type, size_bytes, width, height, channels, vram_estimate_mb, compression, insights)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(path) DO UPDATE SET
         type=excluded.type,
         size_bytes=excluded.size_bytes,
@@ -124,6 +122,7 @@ def upsert_asset_with_insights(conn, data):
         height=excluded.height,
         channels=excluded.channels,
         vram_estimate_mb=excluded.vram_estimate_mb,
+        compression=excluded.compression,
         insights=excluded.insights,
         last_scanned=CURRENT_TIMESTAMP
     """, data)
@@ -134,7 +133,7 @@ def fetch_assets(limit=1000, offset=0, sort_by="vram_estimate_mb", descending=Tr
     order = "DESC" if descending else "ASC"
 
     query = f"""
-    SELECT path, type, size_bytes, width, height, channels, vram_estimate_mb, insights, is_favorite
+    SELECT path, type, size_bytes, width, height, channels, vram_estimate_mb, compression, insights, is_favorite
     FROM assets
     ORDER BY {sort_by} {order}
     LIMIT ? OFFSET ?
@@ -163,7 +162,7 @@ def filter_assets(min_vram=None, asset_type=None):
         where_clause = "WHERE " + where_clause
 
     query = f"""
-    SELECT path, type, size_bytes, width, height, channels, vram_estimate_mb, insights, is_favorite
+    SELECT path, type, size_bytes, width, height, channels, vram_estimate_mb, compression, insights, is_favorite
     FROM assets
     {where_clause}
     ORDER BY vram_estimate_mb DESC
@@ -197,11 +196,13 @@ def get_total_vram():
 
 
 def clear_database():
+    """Drop and recreate the database schema to cleanly handle migrations and wipes."""
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM assets")
+        cursor.execute("DROP TABLE IF EXISTS assets")
         cursor.execute("DELETE FROM settings WHERE key = 'project_root'")
         conn.commit()
+    init_db()
 
 
 def toggle_favorite(path):
@@ -230,7 +231,7 @@ def set_favorite(path, is_favorite):
 def fetch_favorites():
     """Get all favorite assets"""
     query = """
-    SELECT path, type, size_bytes, width, height, channels, vram_estimate_mb, insights, is_favorite
+    SELECT path, type, size_bytes, width, height, channels, vram_estimate_mb, compression, insights, is_favorite
     FROM assets
     WHERE is_favorite = 1
     ORDER BY path ASC
@@ -242,34 +243,21 @@ def fetch_favorites():
 
 
 def get_database_statistics():
-    """
-    Returns dictionary with database statistics:
-    {
-        'total_assets': int,
-        'total_vram_mb': float,
-        'avg_vram_mb': float,
-        'asset_type_counts': {'image': int, 'other': int, ...},
-        'asset_count_with_insights': int
-    }
-    """
+    """Returns dictionary with database statistics"""
     with get_connection() as conn:
         cursor = conn.cursor()
         
-        # Total assets count
         cursor.execute("SELECT COUNT(*) FROM assets")
         total_assets = cursor.fetchone()[0]
         
-        # Total and average VRAM
         cursor.execute("SELECT SUM(vram_estimate_mb), AVG(vram_estimate_mb) FROM assets")
         result = cursor.fetchone()
         total_vram_mb = result[0] if result[0] else 0.0
         avg_vram_mb = result[1] if result[1] else 0.0
         
-        # Asset type breakdown
         cursor.execute("SELECT type, COUNT(*) FROM assets GROUP BY type")
         asset_type_counts = {row[0]: row[1] for row in cursor.fetchall()}
         
-        # Assets with insights
         cursor.execute("SELECT COUNT(*) FROM assets WHERE insights IS NOT NULL AND insights != ''")
         asset_count_with_insights = cursor.fetchone()[0]
         
@@ -282,25 +270,13 @@ def get_database_statistics():
         }
 
 
-def search_assets_advanced(search_query=None, asset_type=None, min_vram=None, use_regex=False):
-    """
-    Advanced search with support for regex patterns and combined filters.
-    
-    Args:
-        search_query: Search term (LIKE or regex pattern)
-        asset_type: Filter by type (image, other, None for all)
-        min_vram: Minimum VRAM in MB (None for all)
-        use_regex: If True, treat search_query as regex pattern
-    
-    Returns:
-        List of asset tuples: (path, type, size_bytes, width, height, channels, vram_mb, insights, is_favorite)
-    """
+def search_assets_advanced(search_query=None, asset_type=None, min_vram=None, use_regex=False, compression_mode=None):
+    """Advanced search with support for regex patterns and combined filters."""
     import re
     
     conditions = []
     params = []
     
-    # Build base SQL query with filters
     if asset_type:
         conditions.append("type = ?")
         params.append(asset_type)
@@ -308,13 +284,18 @@ def search_assets_advanced(search_query=None, asset_type=None, min_vram=None, us
     if min_vram is not None:
         conditions.append("vram_estimate_mb >= ?")
         params.append(min_vram)
+        
+    if compression_mode and compression_mode != "All":
+        # Use LIKE so "Lossy" will match "Lossy (Quality: 0.7)"
+        conditions.append("compression LIKE ?")
+        params.append(f"{compression_mode}%")
     
     where_clause = " AND ".join(conditions)
     if where_clause:
         where_clause = "WHERE " + where_clause
     
     query = f"""
-    SELECT path, type, size_bytes, width, height, channels, vram_estimate_mb, insights, is_favorite
+    SELECT path, type, size_bytes, width, height, channels, vram_estimate_mb, compression, insights, is_favorite
     FROM assets
     {where_clause}
     ORDER BY vram_estimate_mb DESC
@@ -325,7 +306,6 @@ def search_assets_advanced(search_query=None, asset_type=None, min_vram=None, us
         cursor.execute(query, params)
         all_results = cursor.fetchall()
     
-    # Apply search filter (either regex or LIKE)
     if not search_query:
         return all_results
     
@@ -336,15 +316,13 @@ def search_assets_advanced(search_query=None, asset_type=None, min_vram=None, us
         try:
             pattern = re.compile(search_query_lower, re.IGNORECASE)
             for row in all_results:
-                if pattern.search(row[0].lower()):  # Search in path
+                if pattern.search(row[0].lower()):
                     filtered_results.append(row)
         except re.error:
-            # Fallback to LIKE on regex error
             for row in all_results:
                 if search_query_lower in row[0].lower():
                     filtered_results.append(row)
     else:
-        # Simple LIKE search
         for row in all_results:
             if search_query_lower in row[0].lower():
                 filtered_results.append(row)
@@ -353,14 +331,9 @@ def search_assets_advanced(search_query=None, asset_type=None, min_vram=None, us
 
 
 def fetch_all_assets():
-    """
-    Fetch all assets from the database for folder view.
-    
-    Returns:
-        List of asset tuples: (path, type, size_bytes, width, height, channels, vram_mb, insights, is_favorite)
-    """
+    """Fetch all assets from the database for folder view."""
     query = """
-    SELECT path, type, size_bytes, width, height, channels, vram_estimate_mb, insights, is_favorite
+    SELECT path, type, size_bytes, width, height, channels, vram_estimate_mb, compression, insights, is_favorite
     FROM assets
     ORDER BY path ASC
     """

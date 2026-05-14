@@ -43,15 +43,19 @@ class DatabaseTab(QWidget):
 
         self.type_filter = QComboBox()
         self.type_filter.addItems(["All", "image", "audio", "video", "tscn", "tres", "gd", "shader", "other"])
-        # Connect immediately (no debounce for dropdown)
         self.type_filter.currentTextChanged.connect(self.load_data)
 
         self.vram_filter = QComboBox()
         self.vram_filter.addItems([
             "All", "> 10 MB", "> 50 MB", "> 100 MB"
         ])
-        # Connect immediately (no debounce for dropdown)
         self.vram_filter.currentTextChanged.connect(self.load_data)
+
+        self.compression_filter = QComboBox()
+        self.compression_filter.addItems([
+            "All", "Lossless", "Lossy", "VRAM Compression", "Uncompressed", "Disabled", "RAM (Ima-ADPCM)", "N/A"
+        ])
+        self.compression_filter.currentTextChanged.connect(self.load_data)
 
         # Regex mode toggle
         self.regex_mode_checkbox = QCheckBox("Regex Mode")
@@ -67,8 +71,12 @@ class DatabaseTab(QWidget):
 
         filter_layout.addWidget(QLabel("Search:"))
         filter_layout.addWidget(self.search_input)
+        filter_layout.addWidget(QLabel("Type:"))
         filter_layout.addWidget(self.type_filter)
+        filter_layout.addWidget(QLabel("VRAM:"))
         filter_layout.addWidget(self.vram_filter)
+        filter_layout.addWidget(QLabel("Compression:"))
+        filter_layout.addWidget(self.compression_filter)
         filter_layout.addWidget(self.regex_mode_checkbox)
         filter_layout.addWidget(self.clear_filters_btn)
         filter_layout.addStretch()
@@ -116,11 +124,11 @@ class DatabaseTab(QWidget):
         self.bulk_actions_widget.setLayout(bulk_actions_layout)
         self.bulk_actions_widget.setVisible(False)
 
-        # Table
+        # Table (Updated to 11 Columns for Compression)
         self.table = QTableWidget()
-        self.table.setColumnCount(10)
+        self.table.setColumnCount(11)
         self.table.setHorizontalHeaderLabels([
-            "★", "Thumbnail", "Path", "Type", "Size", "Width", "Height", "Channels", "VRAM (MB)", "Insights"
+            "★", "Thumbnail", "Path", "Type", "Size", "Width", "Height", "Channels", "VRAM (MB)", "Compression", "Insights"
         ])
         self.table.setColumnWidth(0, 30)  # Star column width
         self.table.setColumnWidth(1, 90)  # Thumbnail column width
@@ -173,12 +181,14 @@ class DatabaseTab(QWidget):
         self.search_input.clear()
         self.type_filter.setCurrentIndex(0)
         self.vram_filter.setCurrentIndex(0)
+        self.compression_filter.setCurrentIndex(0)
         self.regex_mode_checkbox.setChecked(False)
 
     def load_data(self):
         search_text = self.search_input.text()
         selected_type = self.type_filter.currentText()
         vram_option = self.vram_filter.currentText()
+        compression_option = self.compression_filter.currentText()
         use_regex = self.regex_mode_checkbox.isChecked()
 
         min_vram = None
@@ -188,12 +198,13 @@ class DatabaseTab(QWidget):
 
         asset_type = None if selected_type == "All" else selected_type
 
-        # Use advanced search with regex support
+        # Use advanced search with regex support and compression filter
         rows = search_assets_advanced(
             search_query=search_text if search_text else None,
             asset_type=asset_type,
             min_vram=min_vram,
-            use_regex=use_regex
+            use_regex=use_regex,
+            compression_mode=compression_option
         )
 
         self.current_rows = rows
@@ -211,7 +222,8 @@ class DatabaseTab(QWidget):
 
         for i, row in enumerate(rows):
             # Column 0: Star (favorite indicator)
-            is_favorite = row[8] if len(row) > 8 else 0
+            # Schema: path(0), type(1), size(2), w(3), h(4), ch(5), vram(6), comp(7), insights(8), fav(9)
+            is_favorite = row[9] if len(row) > 9 else 0
             star_text = "★" if is_favorite else "☆"
             star_item = QTableWidgetItem(star_text)
             star_item.setTextAlignment(Qt.AlignCenter)
@@ -221,14 +233,14 @@ class DatabaseTab(QWidget):
             path = row[0]
             file_type = row[1] if len(row) > 1 else "other"
             self.table.setItem(i, 1, self._create_thumbnail_item(path, file_type))
-            self.table.setRowHeight(i, 80)  # Set height for thumbnail display
+            self.table.setRowHeight(i, 80)
 
-            # Columns 2-9: Asset data (shifted by 2 for star + thumbnail)
-            for j, value in enumerate(row[:8]):  # Only iterate through first 8 values (exclude is_favorite)
-                col_index = j + 2  # Shift column index by 2 for the star and thumbnail
+            # Columns 2-10: Asset data
+            for j, value in enumerate(row[:9]):  # Iterate through first 9 values (exclude is_favorite)
+                col_index = j + 2  # Shift by 2 for the star and thumbnail columns
                 item = QTableWidgetItem(str(value))
 
-                # VRAM column (now at index 8 instead of 6)
+                # VRAM column (index 6 in row -> index 8 in table)
                 if j == 6:
                     try:
                         vram = float(value)
@@ -243,8 +255,8 @@ class DatabaseTab(QWidget):
                     except Exception as e:
                         print(f"Exception : {e}")
 
-                # Insights column (now at index 9 instead of 7)
-                if j == 7:
+                # Insights column (index 8 in row -> index 10 in table)
+                if j == 8:
                     val_str = str(value)
                     
                     # Sort priority weighting
@@ -282,7 +294,6 @@ class DatabaseTab(QWidget):
             if os.path.exists(path):
                 thumb = generate_thumbnail(path, size=(80, 80))
                 if thumb:
-                    # Convert PIL image to QPixmap via bytes
                     import io
                     buffer = io.BytesIO()
                     thumb.save(buffer, format='PNG')
@@ -309,7 +320,7 @@ class DatabaseTab(QWidget):
 
     def on_item_double_clicked(self, item):
         row = item.row()
-        path_item = self.table.item(row, 2)  # Path is now at column 2 (after star and thumbnail)
+        path_item = self.table.item(row, 2)  # Path is at column 2
         if path_item:
             file_path = path_item.text()
             if os.path.exists(file_path):
@@ -321,7 +332,6 @@ class DatabaseTab(QWidget):
             row = item.row()
             col = item.column()
             
-            # If star column clicked, toggle favorite
             if col == 0:
                 self.toggle_favorite(row)
                 return
@@ -335,7 +345,7 @@ class DatabaseTab(QWidget):
             action = menu.exec_(self.table.viewport().mapToGlobal(pos))
             
             if action:
-                path_item = self.table.item(row, 2)  # Path is at column 2
+                path_item = self.table.item(row, 2)  
                 if path_item:
                     file_path = path_item.text()
                     if action == open_action:
@@ -362,8 +372,6 @@ class DatabaseTab(QWidget):
     def populate_tree(self, rows):
         """Build proper hierarchical tree from database paths"""
         self.tree.clear()
-        
-        # Build folder hierarchy
         folder_tree = {}
         
         for row in rows:
@@ -371,33 +379,27 @@ class DatabaseTab(QWidget):
             file_type = row[1] if len(row) > 1 else "other"
             vram = float(row[6]) if len(row) > 6 and row[6] else 0
             
-            # Split path into parts
             parts = path.replace("\\", "/").split("/")
             
-            # Navigate/create folder structure
             current = folder_tree
-            for i, part in enumerate(parts[:-1]):  # All parts except filename
+            for i, part in enumerate(parts[:-1]): 
                 if part not in current:
                     current[part] = {"type": "folder", "vram": 0, "children": {}}
                 current[part]["vram"] += vram
                 current = current[part]["children"]
             
-            # Add file as leaf node
             if parts:
                 filename = parts[-1]
                 current[filename] = {"type": "file", "vram": vram, "file_type": file_type}
         
-        # Build tree items
         for name, data in sorted(folder_tree.items()):
             item = self._build_tree_item(name, data)
             self.tree.addTopLevelItem(item)
     
     def _build_tree_item(self, name, data):
-        """Recursively build tree items from folder hierarchy"""
         is_folder = data.get("type") == "folder"
         vram = data.get("vram", 0)
         
-        # Format display text
         if is_folder:
             display_text = f"📁 {name}"
         else:
@@ -405,7 +407,6 @@ class DatabaseTab(QWidget):
         
         item = QTreeWidgetItem([display_text, f"{vram:.2f}"])
         
-        # Color code by VRAM
         if vram > 1000:
             item.setBackground(1, QColor("#f38ba8"))
             item.setForeground(1, QColor("#11111b"))
@@ -413,7 +414,6 @@ class DatabaseTab(QWidget):
             item.setBackground(1, QColor("#f9e2af"))
             item.setForeground(1, QColor("#11111b"))
         
-        # Add children (subfolders and files)
         if is_folder:
             children = data.get("children", {})
             for child_name, child_data in sorted(children.items()):
@@ -424,17 +424,15 @@ class DatabaseTab(QWidget):
 
     # ========================= Keyboard Shortcuts =========================
     def shortcut_copy_path(self):
-        """Ctrl+C: Copy selected asset path to clipboard"""
         selected_indexes = self.table.selectedIndexes()
         if selected_indexes:
             row = selected_indexes[0].row()
-            path_item = self.table.item(row, 2)  # Path is at column 2 (after star and thumbnail)
+            path_item = self.table.item(row, 2)  
             if path_item:
                 clipboard = QApplication.clipboard()
                 clipboard.setText(path_item.text())
 
     def shortcut_export_selected(self):
-        """Ctrl+E: Export selected assets to CSV"""
         selected_indexes = self.table.selectedIndexes()
         if not selected_indexes:
             QMessageBox.warning(self, "No Selection", "Please select at least one asset to export.")
@@ -450,22 +448,20 @@ class DatabaseTab(QWidget):
 
         try:
             with open(file_path, 'w', encoding='utf-8') as f:
-                # Write header
-                f.write("Path,Type,Size (Bytes),Width,Height,Channels,VRAM (MB),Insights,Favorite\n")
+                # Updated header for CSV
+                f.write("Path,Type,Size (Bytes),Width,Height,Channels,VRAM (MB),Compression,Insights,Favorite\n")
                 
-                # Write selected rows
                 for row in sorted(selected_rows):
                     if row < self.table.rowCount():
                         row_data = []
-                        for col in range(2, self.table.columnCount()):  # Skip star and thumbnail columns (0-1)
+                        for col in range(2, self.table.columnCount()):  # Skip star and thumbnail columns
                             item = self.table.item(row, col)
                             if item:
-                                # Escape quotes and wrap in quotes if contains comma
                                 value = item.text().replace('"', '""')
                                 if ',' in value:
                                     value = f'"{value}"'
                                 row_data.append(value)
-                        # Add favorite status
+                        
                         star_item = self.table.item(row, 0)
                         is_favorite = "Yes" if star_item and star_item.text() == "★" else "No"
                         row_data.append(is_favorite)
@@ -476,9 +472,8 @@ class DatabaseTab(QWidget):
             QMessageBox.critical(self, "Export Error", f"Failed to export: {e}")
 
     def toggle_favorite(self, row):
-        """Toggle favorite status for the asset in the given row"""
         from db import toggle_favorite
-        path_item = self.table.item(row, 2)  # Path is at column 2
+        path_item = self.table.item(row, 2)  
         if path_item:
             file_path = path_item.text()
             new_fav_status = toggle_favorite(file_path)
@@ -487,20 +482,18 @@ class DatabaseTab(QWidget):
                 star_item.setText("★" if new_fav_status else "☆")
 
     def on_selection_changed(self):
-        """Handle selection changes - show/hide bulk actions toolbar"""
         selected_indexes = self.table.selectedIndexes()
         has_selection = len(selected_indexes) > 0
         self.bulk_actions_widget.setVisible(has_selection)
 
     def bulk_mark_favorite(self):
-        """Mark all selected assets as favorite"""
         from db import set_favorite
         selected_rows = set()
         for index in self.table.selectedIndexes():
             selected_rows.add(index.row())
         
         for row in selected_rows:
-            path_item = self.table.item(row, 2)  # Path is at column 2
+            path_item = self.table.item(row, 2)  
             if path_item:
                 file_path = path_item.text()
                 set_favorite(file_path, True)
@@ -509,14 +502,13 @@ class DatabaseTab(QWidget):
                     star_item.setText("★")
 
     def bulk_unmark_favorite(self):
-        """Unmark all selected assets as favorite"""
         from db import set_favorite
         selected_rows = set()
         for index in self.table.selectedIndexes():
             selected_rows.add(index.row())
         
         for row in selected_rows:
-            path_item = self.table.item(row, 2)  # Path is at column 2
+            path_item = self.table.item(row, 2)  
             if path_item:
                 file_path = path_item.text()
                 set_favorite(file_path, False)
