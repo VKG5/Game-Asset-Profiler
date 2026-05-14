@@ -11,6 +11,7 @@ from insights import analyze_asset_with_sequences
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".tga", ".bmp", ".dds")
 AUDIO_EXTENSIONS = (".wav", ".ogg", ".mp3")
 VIDEO_EXTENSIONS = (".mp4", ".webm", ".ks9")
+SPINE_EXTENSIONS = (".atlas", ".spine", ".skel", ".spine-json")
 
 
 class ScanWorker(QThread):
@@ -68,6 +69,31 @@ class ScanWorker(QThread):
             for f in files:
                 file_list.append(os.path.join(root, f))
         return file_list
+
+    def _parse_spine_atlas(self, filepath):
+        """Reads the corresponding .atlas file for Spine assets to extract PMA and Scale."""
+        base_path = os.path.splitext(filepath)[0]
+        atlas_path = filepath if filepath.endswith('.atlas') else base_path + '.atlas'
+        
+        if not os.path.exists(atlas_path):
+            return "N/A"
+            
+        try:
+            with open(atlas_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                
+            pma_match = re.search(r'pma:\s*(true|false)', content, re.IGNORECASE)
+            scale_match = re.search(r'scale:\s*([\d.]+)', content, re.IGNORECASE)
+            
+            if pma_match or scale_match:
+                pma = pma_match.group(1).lower() if pma_match else "false"
+                scale = scale_match.group(1) if scale_match else "1.0"
+                return f"PMA: {pma}, Scale: {scale}"
+                
+        except Exception as e:
+            print(f"Error parsing atlas file for {filepath}: {e}")
+            
+        return "N/A"
 
     def _parse_import_file(self, filepath, a_type):
         """Reads the .import file associated with the asset and extracts the compression mode."""
@@ -143,9 +169,14 @@ class ScanWorker(QThread):
             a_type = "gd"
         elif ext in (".shader", ".gdshader"):
             a_type = "shader"
+        elif ext in SPINE_EXTENSIONS:
+            a_type = "spine"
 
-        # Extract the compression metadata from Godot's .import file
-        compression = self._parse_import_file(path, a_type)
+        # Extract the compression metadata from either Spine Atlas or Godot .import
+        if a_type == "spine":
+            compression = self._parse_spine_atlas(path)
+        else:
+            compression = self._parse_import_file(path, a_type)
 
         if a_type == "image":
             result = analyze_image(path)
